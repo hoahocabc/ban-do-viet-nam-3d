@@ -1,6 +1,6 @@
-// ==========================================
-// 1. DỮ LIỆU DÂN SỐ & DIỆN TÍCH 63 TỈNH THÀNH
-// ==========================================
+// ============================================================================
+// 1. DỮ LIỆU CHUẨN DÂN SỐ & DIỆN TÍCH 63 TỈNH THÀNH VIỆT NAM
+// ============================================================================
 const PROVINCE_DATA = {
     "Hà Nội": { area: "3.359 km²", pop: "8.435.700 người", region: "Đồng bằng sông Hồng" },
     "TP. Hồ Chí Minh": { area: "2.095 km²", pop: "9.389.700 người", region: "Đông Nam Bộ" },
@@ -68,158 +68,181 @@ const PROVINCE_DATA = {
     "Yên Bái": { area: "6.887 km²", pop: "842.700 người", region: "Trung du & miền núi phía Bắc" }
 };
 
-// Sử dụng link GeoJSON siêu ổn định và có link dự phòng (Fallback)
-const PRIMARY_GEOJSON_URL = 'https://raw.githubusercontent.com/kenzouno1/VietNam-geojson/master/vietnam.json';
-const BACKUP_GEOJSON_URL = 'https://raw.githubusercontent.com/giao-hang-tiet-kiem/vietnam-geojson/master/provinces.json';
+// Sử dụng mạng CDN JSDelivr chuyên dụng (hỗ trợ CORS tuyệt đối, không bao giờ bị chặn trên GitHub Pages)
+const GEOJSON_SOURCES = [
+    'https://cdn.jsdelivr.net/gh/giao-hang-tiet-kiem/vietnam-geojson@master/provinces.json',
+    'https://cdn.jsdelivr.net/gh/kenzouno1/VietNam-geojson@master/vietnam.json',
+    'https://raw.githubusercontent.com/giao-hang-tiet-kiem/vietnam-geojson/master/provinces.json'
+];
 
-// ==========================================
-// 2. KHỞI TẠO KHÔNG GIAN THREE.JS 3D
-// ==========================================
+// ============================================================================
+// 2. KHỞI TẠO KHÔNG GIAN 3D THREE.JS & MÔ TRƯỜNG ÁNH SÁNG
+// ============================================================================
 const container = document.getElementById('canvas-container');
 const scene = new THREE.Scene();
 
 const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
-camera.position.set(0, -35, 35);
+camera.position.set(0, -38, 38);
 
 const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
 container.appendChild(renderer.domElement);
 
 const controls = new THREE.OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
 controls.dampingFactor = 0.05;
 controls.maxPolarAngle = Math.PI / 2.1;
-controls.minDistance = 10;
-controls.maxDistance = 80;
+controls.minDistance = 12;
+controls.maxDistance = 85;
+controls.target.set(0, 0, 0);
 
-const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
+// Hệ thống ánh sáng nhiều góc độ giúp khối 3D rực rỡ, rõ khối
+const ambientLight = new THREE.AmbientLight(0xffffff, 0.75);
 scene.add(ambientLight);
 
-const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
-dirLight.position.set(20, -20, 30);
-scene.add(dirLight);
+const dirLight1 = new THREE.DirectionalLight(0xffffff, 0.8);
+dirLight1.position.set(30, -30, 40);
+scene.add(dirLight1);
 
-const pointLight = new THREE.PointLight(0x00f2fe, 1, 100);
-pointLight.position.set(0, 0, 30);
+const dirLight2 = new THREE.DirectionalLight(0x38bdf8, 0.4);
+dirLight2.position.set(-30, 30, -10);
+scene.add(dirLight2);
+
+const pointLight = new THREE.PointLight(0x00f2fe, 1.2, 100);
+pointLight.position.set(0, -10, 30);
 scene.add(pointLight);
 
-// ==========================================
-// 3. XỬ LÝ HÌNH HỌC D3 & TẠO MAP 3D
-// ==========================================
+// ============================================================================
+// 3. THUẬT TOÁN DỰNG HÌNH HỌC D3 -> THREE.JS EXTRACTOR
+// ============================================================================
 const mapGroup = new THREE.Group();
 scene.add(mapGroup);
 
+// Phép chiếu Mercator đưa tâm Việt Nam về tọa độ (0, 0, 0) của không gian 3D
 const projection = d3.geoMercator()
     .center([106.3, 16.2])
-    .scale(2600)
+    .scale(2700)
     .translate([0, 0]);
 
 const provincesMeshes = [];
+const allProvinceGroups = [];
 let selectedProvince = null;
 let hoveredProvince = null;
 
-const PALETTE = [0x1e3a8a, 0x0369a1, 0x0e7490, 0x0f766e, 0x1d4ed8, 0x0284c7];
+const PALETTE = [0x1e3a8a, 0x0369a1, 0x0e7490, 0x0f766e, 0x1d4ed8, 0x0284c7, 0x047857];
 
 async function loadMapData() {
     let geojson = null;
-    try {
-        // Thử tải từ link số 1
-        const res = await fetch(PRIMARY_GEOJSON_URL);
-        if (!res.ok) throw new Error("Link số 1 lỗi");
-        geojson = await res.json();
-    } catch (e) {
-        console.warn("Đang chuyển sang link dự phòng...", e);
+    let fetchError = null;
+
+    // Cơ chế tự động thử lần lượt các link CDN nếu gặp lỗi mạng
+    for (const url of GEOJSON_SOURCES) {
         try {
-            // Nếu lỗi, chuyển sang link dự phòng số 2
-            const resBackup = await fetch(BACKUP_GEOJSON_URL);
-            geojson = await resBackup.json();
-        } catch (err) {
-            // Nếu cả 2 link cùng lỗi hoặc mở trực tiếp file://
-            console.error("Lỗi tải bản đồ:", err);
-            const loadingText = document.querySelector('#loading p');
-            const spinner = document.querySelector('.spinner');
-            if (spinner) spinner.style.display = 'none';
-            if (loadingText) {
-                loadingText.innerHTML = `
-                    <span style="color: #f43f5e; font-size: 1.1rem; font-weight: bold;">⚠️ KHÔNG THỂ TẢI DỮ LIỆU BẢN ĐỒ!</span><br><br>
-                    <div style="text-align: left; background: rgba(255,255,255,0.05); padding: 15px; border-radius: 8px; font-size: 0.9rem; line-height: 1.5; max-width: 450px;">
-                        <b>Nguyên nhân 90% bạn gặp phải:</b> Bạn đang nhấp đúp mở trực tiếp file <code>index.html</code>.<br><br>
-                        <b>👉 Cách sửa để chạy được:</b><br>
-                        1. Đẩy 4 file lên <b>GitHub Pages</b> ứng dụng sẽ tự chạy 100%.<br>
-                        2. Hoặc mở bằng <b>Live Server</b> trong phần mềm Visual Studio Code.<br>
-                        <hr style="border-color: rgba(255,255,255,0.1); margin: 10px 0;">
-                        <small style="color: #94a3b8;">Mã lỗi hệ thống: Lỗi CORS hoặc mất kết nối Internet (${err.message})</small>
-                    </div>
-                `;
+            const res = await fetch(url);
+            if (res.ok) {
+                geojson = await res.json();
+                break;
             }
-            return;
+        } catch (err) {
+            fetchError = err;
+            console.warn(`Thử tải link ${url} thất bại, đang thử cổng dự phòng...`);
         }
     }
 
-    // Tiến hành vẽ bản đồ sau khi tải thành công
+    // Nếu không tải được toàn bộ (Ví dụ: Mở trực tiếp file:// mà không dùng server)
+    if (!geojson) {
+        document.querySelector('.spinner').style.display = 'none';
+        document.getElementById('loading-text').innerHTML = `
+            <div style="background: rgba(244,63,94,0.1); border: 1px solid #f43f5e; padding: 20px; border-radius: 12px; text-align: left;">
+                <h3 style="color: #f43f5e; margin-bottom: 10px;">⚠️ Không thể tải dữ liệu bản đồ!</h3>
+                <p style="font-size: 0.9rem; margin-bottom: 10px;"><b>Nguyên nhân:</b> Trình duyệt chặn tải dữ liệu do bạn đang nhấp đúp mở trực tiếp file <code>index.html</code> (giao thức file://).</p>
+                <p style="font-size: 0.9rem; color: #38bdf8;"><b>👉 Cách khắc phục:</b> Hãy đẩy code lên <b>GitHub Pages</b> hoặc dùng tiện ích <b>Live Server</b> trên VS Code, ứng dụng sẽ hoạt động 100%.</p>
+            </div>
+        `;
+        return;
+    }
+
+    // Xử lý dựng hình khối 3D cho từng tỉnh
     geojson.features.forEach((feature, index) => {
-        const provinceGroup = new THREE.Group();
-        // Bắt mọi định dạng tên trường từ các nguồn GeoJSON khác nhau
-        const rawName = feature.properties.NAME_1 || feature.properties.name || feature.properties.Name || feature.properties.ten_tinh || "Chưa rõ";
-        const cleanName = normalizeProvinceName(rawName);
-        
-        provinceGroup.userData = {
-            name: cleanName,
-            rawName: rawName,
-            data: PROVINCE_DATA[cleanName] || { area: "Đang cập nhật...", pop: "Đang cập nhật...", region: "Việt Nam" }
-        };
-
-        const color = PALETTE[index % PALETTE.length];
-        const material = new THREE.MeshPhongMaterial({
-            color: color,
-            transparent: true,
-            opacity: 0.9,
-            side: THREE.DoubleSide
-        });
-
-        const coordinates = feature.geometry.type === "MultiPolygon" 
-            ? feature.geometry.coordinates 
-            : [feature.geometry.coordinates];
-
-        coordinates.forEach(polygon => {
-            const shape = new THREE.Shape();
+        try {
+            const provinceGroup = new THREE.Group();
             
-            polygon[0].forEach((coord, i) => {
-                const [x, y] = projection(coord);
-                if (i === 0) shape.moveTo(x, -y);
-                else shape.lineTo(x, -y);
-            });
-
-            const extrudeSettings = {
-                depth: 0.8,
-                bevelEnabled: true,
-                bevelSegments: 1,
-                bevelSteps: 1,
-                bevelThickness: 0.05,
-                bevelSize: 0.05
+            // Nhận diện tên tỉnh từ mọi chuẩn GeoJSON khác nhau
+            const rawName = feature.properties.NAME_1 || feature.properties.name || feature.properties.Name || feature.properties.ten_tinh || "Chưa rõ";
+            const cleanName = normalizeProvinceName(rawName);
+            
+            const baseColorHex = PALETTE[index % PALETTE.length];
+            const baseColor = new THREE.Color(baseColorHex);
+            
+            provinceGroup.userData = {
+                name: cleanName,
+                rawName: rawName,
+                data: PROVINCE_DATA[cleanName] || { area: "Đang cập nhật...", pop: "Đang cập nhật...", region: "Việt Nam" },
+                baseColor: baseColor,
+                targetColor: baseColor.clone(),
+                currentColor: baseColor.clone(),
+                targetZ: 0
             };
 
-            const geometry = new THREE.ExtrudeGeometry(shape, extrudeSettings);
-            const mesh = new THREE.Mesh(geometry, material);
-            mesh.userData = provinceGroup.userData;
-            
-            const edges = new THREE.EdgesGeometry(geometry);
-            const lineMaterial = new THREE.LineBasicMaterial({ color: 0x38bdf8, linewidth: 1, opacity: 0.4, transparent: true });
-            const line = new THREE.LineSegments(edges, lineMaterial);
-            mesh.add(line);
+            const material = new THREE.MeshPhongMaterial({
+                color: baseColor,
+                transparent: true,
+                opacity: 0.92,
+                side: THREE.DoubleSide,
+                shininess: 40
+            });
 
-            provinceGroup.add(mesh);
-            provincesMeshes.push(mesh);
-        });
+            // Xử lý an toàn đa giác (Polygon và MultiPolygon)
+            const coordinates = feature.geometry.type === "MultiPolygon" 
+                ? feature.geometry.coordinates 
+                : [feature.geometry.coordinates];
 
-        provinceGroup.userData.baseColor = color;
-        mapGroup.add(provinceGroup);
+            coordinates.forEach(polygon => {
+                const shape = new THREE.Shape();
+                
+                polygon[0].forEach((coord, i) => {
+                    const [x, y] = projection(coord);
+                    if (isNaN(x) || isNaN(y)) return;
+                    if (i === 0) shape.moveTo(x, -y);
+                    else shape.lineTo(x, -y);
+                });
+
+                const extrudeSettings = {
+                    depth: 0.7,
+                    bevelEnabled: true,
+                    bevelSegments: 2,
+                    bevelSteps: 1,
+                    bevelThickness: 0.04,
+                    bevelSize: 0.04
+                };
+
+                const geometry = new THREE.ExtrudeGeometry(shape, extrudeSettings);
+                const mesh = new THREE.Mesh(geometry, material);
+                mesh.userData = provinceGroup.userData;
+                
+                // Vẽ đường viền ranh giới sáng màu
+                const edges = new THREE.EdgesGeometry(geometry);
+                const lineMaterial = new THREE.LineBasicMaterial({ color: 0x7dd3fc, linewidth: 1, opacity: 0.45, transparent: true });
+                const line = new THREE.LineSegments(edges, lineMaterial);
+                mesh.add(line);
+
+                provinceGroup.add(mesh);
+                provincesMeshes.push(mesh);
+            });
+
+            mapGroup.add(provinceGroup);
+            allProvinceGroups.push(provinceGroup);
+        } catch (e) {
+            console.warn("Bỏ qua lỗi dựng hình của một tỉnh:", e);
+        }
     });
 
-    // Ẩn màn hình loading
-    document.getElementById('loading').style.opacity = 0;
-    setTimeout(() => document.getElementById('loading').style.display = 'none', 500);
+    // Ẩn màn hình loading sau khi hoàn tất
+    const loadingEl = document.getElementById('loading');
+    loadingEl.style.opacity = 0;
+    setTimeout(() => loadingEl.style.display = 'none', 600);
 }
 
 function normalizeProvinceName(name) {
@@ -227,9 +250,9 @@ function normalizeProvinceName(name) {
     return name.replace(/^(Tỉnh|Thành phố|TP\.|TP)\s+/i, '').trim();
 }
 
-// ==========================================
-// 4. TƯỢNG TÁC CHUỘT (RAYCASTER & CLICK EVENT)
-// ==========================================
+// ============================================================================
+// 4. TƯỢNG TÁC RAYCASTER & XỬ LÝ SỰ KIỆN CLICK / HOVER
+// ============================================================================
 const raycaster = new THREE.Raycaster();
 const mouse = new THREE.Vector2();
 
@@ -247,7 +270,7 @@ window.addEventListener('mousemove', (event) => {
         if (hoveredProvince !== parentGroup && selectedProvince !== parentGroup) {
             resetHover();
             hoveredProvince = parentGroup;
-            setGroupColor(hoveredProvince, 0x38bdf8);
+            hoveredProvince.userData.targetColor.setHex(0x38bdf8); // Màu sáng khi di chuột
             document.body.style.cursor = 'pointer';
         }
     } else {
@@ -258,15 +281,9 @@ window.addEventListener('mousemove', (event) => {
 
 function resetHover() {
     if (hoveredProvince && hoveredProvince !== selectedProvince) {
-        setGroupColor(hoveredProvince, hoveredProvince.userData.baseColor);
+        hoveredProvince.userData.targetColor.copy(hoveredProvince.userData.baseColor);
         hoveredProvince = null;
     }
-}
-
-function setGroupColor(group, hexColor) {
-    group.children.forEach(mesh => {
-        mesh.material.color.setHex(hexColor);
-    });
 }
 
 window.addEventListener('click', () => {
@@ -277,19 +294,24 @@ window.addEventListener('click', () => {
         const hitMesh = intersects[0].object;
         const targetGroup = hitMesh.parent;
 
+        // Nếu click lại đúng tỉnh đang chọn -> Bỏ chọn
         if (selectedProvince === targetGroup) {
             deselectCurrentProvince();
             return;
         }
 
+        // Hạ tỉnh cũ xuống
         if (selectedProvince) {
-            animateElevation(selectedProvince, 0, selectedProvince.userData.baseColor);
+            selectedProvince.userData.targetZ = 0;
+            selectedProvince.userData.targetColor.copy(selectedProvince.userData.baseColor);
         }
 
+        // Chọn tỉnh mới: Nổi lên độ cao Z=1.6 và đổi màu hồng cam nổi bật
         selectedProvince = targetGroup;
-        animateElevation(selectedProvince, 1.5, 0xf43f5e);
+        selectedProvince.userData.targetZ = 1.6;
+        selectedProvince.userData.targetColor.setHex(0xf43f5e);
+        
         showInfoPanel(selectedProvince.userData);
-
     } else {
         deselectCurrentProvince();
     }
@@ -297,24 +319,16 @@ window.addEventListener('click', () => {
 
 function deselectCurrentProvince() {
     if (selectedProvince) {
-        animateElevation(selectedProvince, 0, selectedProvince.userData.baseColor);
+        selectedProvince.userData.targetZ = 0;
+        selectedProvince.userData.targetColor.copy(selectedProvince.userData.baseColor);
         selectedProvince = null;
         hideInfoPanel();
     }
 }
 
-function animateElevation(group, targetZ, targetColorHex) {
-    setGroupColor(group, targetColorHex);
-    gsap.to(group.position, {
-        z: targetZ,
-        duration: 0.6,
-        ease: "power3.out"
-    });
-}
-
-// ==========================================
+// ============================================================================
 // 5. HIỆN / ẨN BẢNG THÔNG TIN CHI TIẾT
-// ==========================================
+// ============================================================================
 const infoPanel = document.getElementById('info-panel');
 const closeBtn = document.getElementById('close-btn');
 
@@ -333,9 +347,9 @@ function hideInfoPanel() {
 
 closeBtn.addEventListener('click', deselectCurrentProvince);
 
-// ==========================================
-// 6. VÒNG LẶP RENDER & RESIZE MÀN HÌNH
-// ==========================================
+// ============================================================================
+// 6. VÒNG LẶP RENDER & TỰ ĐỘNG CHUYỂN ĐỘNG NỘI TẠI (NATIVE 3D LERP)
+// ============================================================================
 window.addEventListener('resize', () => {
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
@@ -345,8 +359,30 @@ window.addEventListener('resize', () => {
 function animate() {
     requestAnimationFrame(animate);
     controls.update();
+
+    // Thuật toán nội suy mượt mà (Lerp) tạo hiệu ứng nổi khối mà không cần GSAP
+    for (let i = 0; i < allProvinceGroups.length; i++) {
+        const group = allProvinceGroups[i];
+        
+        // Di chuyển độ cao Z mượt mà
+        if (Math.abs(group.position.z - group.userData.targetZ) > 0.001) {
+            group.position.z = THREE.MathUtils.lerp(group.position.z, group.userData.targetZ, 0.1);
+        }
+
+        // Chuyển đổi màu sắc mượt mà
+        if (!group.userData.currentColor.equals(group.userData.targetColor)) {
+            group.userData.currentColor.lerp(group.userData.targetColor, 0.1);
+            group.children.forEach(mesh => {
+                if (mesh.material && mesh.material.color) {
+                    mesh.material.color.copy(group.userData.currentColor);
+                }
+            });
+        }
+    }
+
     renderer.render(scene, camera);
 }
 
+// Khởi chạy ứng dụng
 loadMapData();
 animate();
