@@ -68,7 +68,6 @@ const PROVINCE_DATA = {
     "Yên Bái": { area: "6.887 km²", pop: "842.700 người", region: "Trung du & miền núi phía Bắc" }
 };
 
-// Xây dựng bộ tra cứu kép (có dấu và không dấu) để chống lỗi sai lệch dữ liệu
 function removeDiacritics(str) {
     return str.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/đ/g, "d").replace(/Đ/g, "D").toLowerCase().trim();
 }
@@ -85,12 +84,12 @@ function getProvinceInfo(rawName) {
     return NORMALIZED_DATA[clean.toLowerCase()] || NORMALIZED_DATA[removeDiacritics(clean)] || { area: "Đang cập nhật...", pop: "Đang cập nhật...", region: "Việt Nam" };
 }
 
-// Các nguồn GeoJSON công khai xác thực thực tế trên GitHub và CDN
+// KIẾN TRÚC MỚI: Ưu tiên đọc file vietnam.json nằm tại repository của bạn trước
 const GEOJSON_SOURCES = [
-    'https://raw.githubusercontent.com/Tien13/vietnam-geojson/master/provinces.json',
-    'https://raw.githubusercontent.com/dao-hoang-son/vn-administrative-boundaries/master/provinces.geojson',
-    'https://raw.githubusercontent.com/Vizzuality/growasia_calculator/master/public/json/vietnam.json',
-    'https://cdn.jsdelivr.net/gh/Tien13/vietnam-geojson@master/provinces.json'
+    './vietnam.json',                                                                  // 1. File nội bộ (Không bao giờ lỗi 404/CORS)
+    'https://raw.githubusercontent.com/hainguyen2k/vietnam-geojson/main/vn-provinces.json',   // 2. Link dự phòng nhánh main
+    'https://cdn.jsdelivr.net/gh/hainguyen2k/vietnam-geojson@main/vn-provinces.json',         // 3. Link CDN JsDelivr tốc độ cao
+    'https://raw.githubusercontent.com/thangdtran/vietnam-geojson/main/provinces.json'        // 4. Link dự phòng số 2
 ];
 
 // ============================================================================
@@ -152,52 +151,42 @@ const PALETTE = [0x1e3a8a, 0x0369a1, 0x0e7490, 0x0f766e, 0x1d4ed8, 0x0284c7, 0x0
 async function loadMapData() {
     let geojson = null;
 
-    // Bộ lọc tải dữ liệu an toàn: Kiểm tra cú pháp trước khi parse JSON
     for (const url of GEOJSON_SOURCES) {
         try {
-            console.log("Đang kết nối đến máy chủ:", url);
             const res = await fetch(url);
-            if (!res.ok) continue;
+            if (!res.ok) continue; // Nếu lỗi 404/500 bỏ qua thử link tiếp theo
             
             const textData = await res.text();
             const trimmed = textData.trim();
             
-            // Một file GeoJSON hợp lệ bắt buộc phải bắt đầu bằng dấu ngoặc nhọn '{'
-            // Loại bỏ lập tức các phản hồi lỗi dạng văn bản như '404: Not Found' hay '<HTML>'
-            if (!trimmed.startsWith('{')) {
-                console.warn(`Link ${url} trả về trang lỗi văn bản thay vì JSON, đang đổi cổng...`);
-                continue;
-            }
+            // Bộ kiểm tra cú pháp tuyệt đối: Phải bắt đầu bằng chữ '{'
+            if (!trimmed.startsWith('{')) continue;
             
             const data = JSON.parse(trimmed);
             if (data && (data.features || data.type === "FeatureCollection")) {
                 geojson = data;
-                console.log("✔ Đã tải dữ liệu bản đồ thành công từ:", url);
                 break;
             }
         } catch (err) {
-            console.warn(`Lỗi khi kết nối với ${url}:`, err.message);
+            console.warn(`Đang chuyển máy chủ vì không tải được từ ${url}`);
         }
     }
 
-    // Nếu tất cả cổng tải đều thất bại
     if (!geojson) {
         document.querySelector('.spinner').style.display = 'none';
         document.getElementById('loading-text').innerHTML = `
             <div style="background: rgba(244,63,94,0.1); border: 1px solid #f43f5e; padding: 20px; border-radius: 12px; text-align: left;">
-                <h3 style="color: #f43f5e; margin-bottom: 10px;">⚠️ Lỗi kết nối máy chủ bản đồ!</h3>
-                <p style="font-size: 0.9rem; margin-bottom: 10px;">Trình duyệt không thể tải dữ liệu bản đồ do bị tường lửa/bảo mật ngăn chặn.</p>
-                <p style="font-size: 0.9rem; color: #38bdf8;"><b>👉 Cách xử lý:</b> Hãy đảm bảo bạn đã tải 4 file này lên <b>GitHub Pages</b> (giao thức https://) hoặc chạy thông qua <b>Live Server</b> trên Visual Studio Code thay vì nhấp đúp trực tiếp vào file index.html.</p>
+                <h3 style="color: #f43f5e; margin-bottom: 10px;">⚠️ Chưa tìm thấy file vietnam.json!</h3>
+                <p style="font-size: 0.9rem; margin-bottom: 10px;">Để web chạy được trên GitHub Pages, bạn hãy làm thêm đúng 1 bước nữa:</p>
+                <p style="font-size: 0.9rem; color: #38bdf8;">👉 Tạo file <b>vietnam.json</b> trong repository GitHub của bạn và dán nội dung từ link sau vào: <br><a href="https://raw.githubusercontent.com/hainguyen2k/vietnam-geojson/main/vn-provinces.json" target="_blank" style="color:#00f2fe; text-decoration: underline;">Tải dữ liệu vietnam.json tại đây</a></p>
             </div>
         `;
         return;
     }
 
-    // Dựng khối 3D cho 63 tỉnh thành
     geojson.features.forEach((feature, index) => {
         try {
             const provinceGroup = new THREE.Group();
-            
             const props = feature.properties || {};
             const rawName = props.name || props.Name || props.NAME_1 || props.ten_tinh || props['name-local'] || "Chưa rõ";
             const cleanName = rawName.replace(/^(Tỉnh|Thành phố|TP\.|TP)\s+/i, '').trim();
@@ -229,7 +218,6 @@ async function loadMapData() {
 
             coordinates.forEach(polygon => {
                 const shape = new THREE.Shape();
-                
                 polygon[0].forEach((coord, i) => {
                     const [x, y] = projection(coord);
                     if (isNaN(x) || isNaN(y)) return;
@@ -238,12 +226,8 @@ async function loadMapData() {
                 });
 
                 const extrudeSettings = {
-                    depth: 0.7,
-                    bevelEnabled: true,
-                    bevelSegments: 2,
-                    bevelSteps: 1,
-                    bevelThickness: 0.04,
-                    bevelSize: 0.04
+                    depth: 0.7, bevelEnabled: true, bevelSegments: 2,
+                    bevelSteps: 1, bevelThickness: 0.04, bevelSize: 0.04
                 };
 
                 const geometry = new THREE.ExtrudeGeometry(shape, extrudeSettings);
@@ -262,7 +246,7 @@ async function loadMapData() {
             mapGroup.add(provinceGroup);
             allProvinceGroups.push(provinceGroup);
         } catch (e) {
-            console.warn("Bỏ qua lỗi dựng hình một tỉnh:", e);
+            console.warn("Bỏ qua lỗi dựng hình:", e);
         }
     });
 
@@ -378,14 +362,11 @@ function animate() {
     requestAnimationFrame(animate);
     controls.update();
 
-    // Thuật toán nội suy mượt mà 60fps (Lerp) tự tính toán chuyển động 3D không cần GSAP
     for (let i = 0; i < allProvinceGroups.length; i++) {
         const group = allProvinceGroups[i];
-        
         if (Math.abs(group.position.z - group.userData.targetZ) > 0.001) {
             group.position.z = THREE.MathUtils.lerp(group.position.z, group.userData.targetZ, 0.1);
         }
-
         if (!group.userData.currentColor.equals(group.userData.targetColor)) {
             group.userData.currentColor.lerp(group.userData.targetColor, 0.1);
             group.children.forEach(mesh => {
@@ -399,6 +380,5 @@ function animate() {
     renderer.render(scene, camera);
 }
 
-// Khởi chạy ứng dụng
 loadMapData();
 animate();

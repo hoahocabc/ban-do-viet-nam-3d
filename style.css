@@ -23,7 +23,6 @@ body {
     z-index: 1;
 }
 
-/* Header */
 .top-header {
     position: absolute;
     top: 24px;
@@ -54,7 +53,6 @@ body {
     display: inline-block;
 }
 
-/* Info Panel (Glassmorphism) */
 #info-panel {
     position: absolute;
     right: 30px;
@@ -152,7 +150,6 @@ body {
     color: #38bdf8;
 }
 
-/* Loading Screen */
 #loading {
     position: absolute;
     top: 0;
