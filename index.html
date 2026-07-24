@@ -6,16 +6,16 @@
     <title>Bản Đồ Việt Nam 3D - Interactive Map</title>
     <link rel="stylesheet" href="style.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
-    <!-- Thư viện Three.js, OrbitControls và D3.js (Loại bỏ GSAP để tránh lỗi xung đột tài nguyên) -->
+    <!-- Thư viện Three.js, OrbitControls và D3.js -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
 </head>
 <body>
-    <!-- Màn hình tải dữ liệu có khả năng hiển thị thông báo lỗi tự động -->
+    <!-- Màn hình tải dữ liệu với khả năng tự chẩn đoán lỗi -->
     <div id="loading">
         <div class="spinner"></div>
-        <p id="loading-text">Đang khởi tạo không gian 3D & tải bản đồ Việt Nam...</p>
+        <p id="loading-text">Đang kết nối máy chủ & tải dữ liệu bản đồ 3D...</p>
     </div>
 
     <!-- Tiêu đề & Hướng dẫn thao tác -->
@@ -27,7 +27,7 @@
     <!-- Khung chứa Canvas 3D -->
     <div id="canvas-container"></div>
 
-    <!-- Bảng thông tin chi tiết tỉnh thành (Glassmorphism UI) -->
+    <!-- Bảng thông tin chi tiết tỉnh thành -->
     <aside id="info-panel" class="hidden">
         <button id="close-btn" title="Đóng bảng thông tin">&times;</button>
         <div class="province-badge">Tỉnh / Thành phố</div>
